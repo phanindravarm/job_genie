@@ -3,7 +3,7 @@ from flask_cors import CORS
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
-
+from flask import Response
 load_dotenv()
 
 app = Flask(__name__)
@@ -96,39 +96,46 @@ def upload_file():
     
     if file.filename == '':
         return 'No selected file', 400
+
     file_path = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(file_path)
-    try:
-        uploaded_file = client.files.create(
-            file=open(file_path, "rb"),
-            purpose="user_data"
-        )
 
-        response = client.responses.create(
-            model="gpt-4o-mini",
-            input=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_file",
-                            "file_id": uploaded_file.id,
-                        },
-                        {
-                            "type": "input_text",
-                            "text": prompt,
-                        },
-                    ]
-                }
-            ]
-        )
-        client.files.delete(uploaded_file.id)
-        os.remove(file_path)
+    def generate():
+        try:
+            uploaded_file = client.files.create(
+                file=open(file_path, "rb"),
+                purpose="user_data"
+            )
 
-        return jsonify({'analysis': response.output_text}), 200
+            response = client.responses.create(
+                model="gpt-4o-mini",
+                input=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "input_file",
+                                "file_id": uploaded_file.id,
+                            },
+                            {
+                                "type": "input_text",
+                                "text": prompt,
+                            },
+                        ]
+                    }
+                ],
+                stream=True,
+            )
 
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+            for chunk in response:
+                if chunk.type == "response.output_text.delta":
+                    yield chunk.delta
+            client.files.delete(uploaded_file.id)
+            os.remove(file_path)
+        except Exception as e:
+            yield f"\n[ERROR]: {str(e)}"
+
+    return Response(generate(), mimetype='text/plain')
 
 
 if __name__ == '__main__':
