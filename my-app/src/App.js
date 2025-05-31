@@ -40,18 +40,22 @@ function App() {
     setLoading(true);
     const formData = new FormData();
     formData.append("file", file);
-    console.log(formData)
     try {
       const response = await fetch("http://localhost:5000/upload", {
         method: "POST",
         body: formData,
       });
-      const data = await response.json();
-      if (response.ok) {
-        setResponse(data.analysis);
-      } else {
-        alert("Upload failed.");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      while (true) {
+      const { done, value } = await reader.read();
+      if (done){
+        setLoading(false)
+        break;
       }
+      const chunk = decoder.decode(value, { stream: true });
+      setResponse((prev) => prev + chunk);
+    }
     } catch (error) {
       console.error("Error uploading file:", error);
     } finally {
